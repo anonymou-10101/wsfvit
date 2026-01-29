@@ -1,4 +1,4 @@
-# WSF‑ViT: Wavelet‑Based Spatial‑Frequency Attention \\ for Vision Transformers
+# WSF‑ViT: Wavelet‑Based Spatial‑Frequency Attention for Vision Transformers
 
 ![Acc](./fig1.png)
 While recent vision transformers operating purely in the spatial domain have achieved high performance in capturing localized patterns, their reliance on fixed attention windows often limits effective modeling of global contextual dependencies. To address this limitation, we propose WSF-ViT, a vision transformer with a wavelet-based spatial–frequency attention framework. The proposed wavelet embedding stem decomposes input images into multi-frequency subbands, and the WSF attention blocks jointly model intra- and inter-subband interactions, enabling effective integration of fine-grained spatial details and global semantic information across frequency domains. Experimental results on the ImageNet-1K classification benchmark show that WSF-ViT achieves 85.8\% top-1 accuracy with 100M parameters and 22.3G FLOPs when trained from scratch, establishing state-of-the-art performance among vision transformers with comparable model complexity. 
