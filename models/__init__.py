@@ -1,1 +1,1 @@
-from .mixvit import *
+from .wsfvit import *
