@@ -17,9 +17,9 @@ from timm.models._manipulate import named_apply, checkpoint_seq
 
 import math
 import torch.nn.functional as F
-from .mixvit_wavelets import DWT_2D_FFT_L2
+from .wsfvit_wavelets import DWT_2D_FFT_L2
 
-__all__ = ['MixVitCfg', 'MixVitConvCfg', 'MixVitTransformerCfg', 'MixVit']
+__all__ = ['wsfVitCfg', 'wsfVitConvCfg', 'wsfVitTransformerCfg', 'wsfVit']
 
 try:
     from mmdet.models.builder import BACKBONES as det_BACKBONES
@@ -50,7 +50,7 @@ else:
 
 
 @dataclass
-class MixVitTransformerCfg:
+class wsfVitTransformerCfg:
     dim_head: int = 32
     head_first: bool = False
     expand_ratio: float = 4.0
@@ -83,7 +83,7 @@ class MixVitTransformerCfg:
 
 
 @dataclass
-class MixVitConvCfg:
+class wsfVitConvCfg:
     block_type: str = 'mbconv'
     expand_ratio: float = 4.0
     expand_output: bool = True  # calculate expansion channels from output (vs input chs)
@@ -119,7 +119,7 @@ class MixVitConvCfg:
 
 
 @dataclass
-class MixVitCfg:
+class wsfVitCfg:
     embed_dim: Tuple[int, ...] = (96, 192, 384, 768)
     num_heads: Tuple[int, ...] = (4, 8, 16, 32)
     depths: Tuple[int, ...] = (2, 3, 5, 2)
@@ -127,8 +127,8 @@ class MixVitCfg:
     block_type: Tuple[Union[str, Tuple[str, ...]], ...] = ('C', 'C', 'T', 'T')
     stem_width: Union[int, Tuple[int, int]] = 64
     stem_bias: bool = False
-    conv_cfg: MixVitConvCfg = field(default_factory=MixVitConvCfg)
-    transformer_cfg: MixVitTransformerCfg = field(default_factory=MixVitTransformerCfg)
+    conv_cfg: wsfVitConvCfg = field(default_factory=wsfVitConvCfg)
+    transformer_cfg: wsfVitTransformerCfg = field(default_factory=wsfVitTransformerCfg)
     head_hidden_size: int = None
     weight_init: str = 'vit_eff'
 
@@ -314,7 +314,7 @@ class MbConvBlock(nn.Module):
             out_chs: int,
             stride: int = 1,
             dilation: Tuple[int, int] = (1, 1),
-            cfg: MixVitConvCfg = MixVitConvCfg(),
+            cfg: wsfVitConvCfg = wsfVitConvCfg(),
             drop_path: float = 0.
     ):
         super(MbConvBlock, self).__init__()
@@ -396,7 +396,7 @@ class MbConvBlock(nn.Module):
         return x
 
 
-def window_partition(x, window_size: List[int]):
+def intra_subband_local_partition(x, window_size: List[int]):
     B, H, W, C = x.shape
     _assert(H % window_size[0] == 0, f'height ({H}) must be divisible by window ({window_size[0]})')
     _assert(W % window_size[1] == 0, '')
@@ -406,7 +406,7 @@ def window_partition(x, window_size: List[int]):
 
 
 @register_notrace_function  # reason: int argument is a Proxy
-def window_reverse(windows, window_size: List[int], img_size: List[int]):
+def intra_subband_local_reverse(windows, window_size: List[int], img_size: List[int]):
     H, W = img_size
     C = windows.shape[-1]
     x = windows.view(-1, H // window_size[0], W // window_size[1], window_size[0], window_size[1], C)
@@ -414,7 +414,7 @@ def window_reverse(windows, window_size: List[int], img_size: List[int]):
     return x
 
 
-def grid_partition(x, grid_size: List[int]):
+def intra_subband_global_partition(x, grid_size: List[int]):
     B, H, W, C = x.shape
     _assert(H % grid_size[0] == 0, f'height {H} must be divisible by grid {grid_size[0]}')
     _assert(W % grid_size[1] == 0, '')
@@ -424,7 +424,7 @@ def grid_partition(x, grid_size: List[int]):
 
 
 @register_notrace_function  # reason: int argument is a Proxy
-def grid_reverse(windows, grid_size: List[int], img_size: List[int]):
+def intra_subband_global_reverse(windows, grid_size: List[int], img_size: List[int]):
     H, W = img_size
     C = windows.shape[-1]
     x = windows.view(-1, H // grid_size[0], W // grid_size[1], grid_size[0], grid_size[1], C)
@@ -432,7 +432,7 @@ def grid_reverse(windows, grid_size: List[int], img_size: List[int]):
     return x
 
 
-def get_rel_pos_cls(cfg: MixVitTransformerCfg, window_size):
+def get_rel_pos_cls(cfg: wsfVitTransformerCfg, window_size):
     rel_pos_cls = None
     if cfg.rel_pos_type == 'mlp':
         rel_pos_cls = partial(RelPosMlp, window_size=window_size, hidden_dim=cfg.rel_pos_dim)
@@ -449,7 +449,7 @@ class PartitionAttentionCl(nn.Module):
             self,
             dim: int,
             partition_type: str = 'block',
-            cfg: MixVitTransformerCfg = MixVitTransformerCfg(),
+            cfg: wsfVitTransformerCfg = wsfVitTransformerCfg(),
             drop_path: float = 0.,
     ):
         super().__init__()
@@ -487,16 +487,16 @@ class PartitionAttentionCl(nn.Module):
     def _partition_attn(self, x):
         img_size = x.shape[1:3]
         if self.partition_block:
-            partitioned = window_partition(x, self.partition_size)
+            partitioned = intra_subband_local_partition(x, self.partition_size)
         else:
-            partitioned = grid_partition(x, self.partition_size)
+            partitioned = intra_subband_global_partition(x, self.partition_size)
 
         partitioned = self.attn(partitioned)
 
         if self.partition_block:
-            x = window_reverse(partitioned, self.partition_size, img_size)
+            x = intra_subband_local_reverse(partitioned, self.partition_size, img_size)
         else:
-            x = grid_reverse(partitioned, self.partition_size, img_size)
+            x = intra_subband_global_reverse(partitioned, self.partition_size, img_size)
         return x
 
     def forward(self, x):
@@ -592,7 +592,7 @@ class ConvPosEnc(nn.Module):
         return x
 
 
-class MixVitBlock(nn.Module):
+class wsfVitBlock(nn.Module):
 
     def __init__(
             self,
@@ -600,8 +600,8 @@ class MixVitBlock(nn.Module):
             dim_out: int,
             num_heads: int,
             stride: int = 1,
-            conv_cfg: MixVitConvCfg = MixVitConvCfg(),
-            transformer_cfg: MixVitTransformerCfg = MixVitTransformerCfg(),
+            conv_cfg: wsfVitConvCfg = wsfVitConvCfg(),
+            transformer_cfg: wsfVitTransformerCfg = wsfVitTransformerCfg(),
             drop_path: float = 0.,
             mlp_ratio: float = 4.,
             layer: int = 0,
@@ -649,7 +649,7 @@ class MixVitBlock(nn.Module):
         return x
 
 
-class MixVitStage(nn.Module):
+class wsfVitStage(nn.Module):
     def __init__(
             self,
             in_chs: int,
@@ -659,8 +659,8 @@ class MixVitStage(nn.Module):
             depth: int = 4,
             feat_size: Tuple[int, int] = (14, 14),
             block_types: Union[str, Tuple[str]] = 'C',
-            transformer_cfg: MixVitTransformerCfg = MixVitTransformerCfg(),
-            conv_cfg: MixVitConvCfg = MixVitConvCfg(),
+            transformer_cfg: wsfVitTransformerCfg = wsfVitTransformerCfg(),
+            conv_cfg: wsfVitConvCfg = wsfVitConvCfg(),
             drop_path: Union[float, List[float]] = 0.,
             mlp_ratio: float = 4.,
             layer: int = 0,
@@ -673,7 +673,7 @@ class MixVitStage(nn.Module):
         for i, t in enumerate(block_types):
             block_stride = stride if i == 0 else 1
  
-            blocks += [MixVitBlock(
+            blocks += [wsfVitBlock(
                 in_chs,
                 out_chs,
                 num_heads,
@@ -742,7 +742,7 @@ class Stem(nn.Module):
         return x
 
 
-def cfg_window_size(cfg: MixVitTransformerCfg, img_size: Tuple[int, int]):
+def cfg_window_size(cfg: wsfVitTransformerCfg, img_size: Tuple[int, int]):
     if cfg.window_size is not None:
         assert cfg.grid_size
         return cfg
@@ -751,7 +751,7 @@ def cfg_window_size(cfg: MixVitTransformerCfg, img_size: Tuple[int, int]):
     return cfg
 
 
-def _overlay_kwargs(cfg: MixVitCfg, **kwargs):
+def _overlay_kwargs(cfg: wsfVitCfg, **kwargs):
     transformer_kwargs = {}
     conv_kwargs = {}
     base_kwargs = {}
@@ -771,10 +771,10 @@ def _overlay_kwargs(cfg: MixVitCfg, **kwargs):
     return cfg
 
 
-class MixVit(nn.Module):
+class wsfVit(nn.Module):
     def __init__(
             self,
-            cfg: MixVitCfg = "MixViT_Tiny",
+            cfg: wsfVitCfg = "wsfViT_Tiny",
             fork_feat : bool =False,
             model_name: str = None,
             pretrained_path: str = None,
@@ -836,7 +836,7 @@ class MixVit(nn.Module):
             out_chs = cfg.embed_dim[i]
             num_heads = cfg.num_heads[i]
             feat_size = tuple([(r - 1) // stage_stride + 1 for r in feat_size])
-            stages += [MixVitStage(
+            stages += [wsfVitStage(
                 in_chs,
                 out_chs,
                 num_heads,
@@ -1070,7 +1070,7 @@ def checkpoint_filter_fn(state_dict, model: nn.Module):
     return out_dict
 
 
-def _create_mixvit(variant, cfg_variant=None, pretrained=False, **kwargs):
+def _create_wsfvit(variant, cfg_variant=None, pretrained=False, **kwargs):
     
     if cfg_variant is None:
         if variant in model_cfgs:
@@ -1078,7 +1078,7 @@ def _create_mixvit(variant, cfg_variant=None, pretrained=False, **kwargs):
         else:
             cfg_variant = '_'.join(variant.split('_')[:-1])
     return build_model_with_cfg(
-        MixVit, variant, pretrained,
+        wsfVit, variant, pretrained,
         model_cfg=model_cfgs[cfg_variant],
         feature_cfg=dict(flatten_sequential=True),
         pretrained_filter_fn=checkpoint_filter_fn,
@@ -1096,57 +1096,57 @@ def _cfg(url='', **kwargs):
     }
 
 default_cfgs = generate_default_cfgs({
-    'mixvit_p1_224.in1k': _cfg(
+    'wsfvit_p1_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD, crop_pct=0.875),
     
-    'mixvit_p2_224.in1k': _cfg(
+    'wsfvit_p2_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD, crop_pct=0.875), 
     
-    'mixvit_n_224.in1k': _cfg(
+    'wsfvit_n_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD, crop_pct=0.875),
     
-    'mixvit_t_224.in1k': _cfg(
+    'wsfvit_t_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
-    'mixvit_t_384.in1k': _cfg(
+    'wsfvit_t_384.in1k': _cfg(
         file='/path/to/checkpoint', 
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=0.95, crop_mode='squash'
     ),
     
-    'mixvit_s_224.in1k': _cfg(
+    'wsfvit_s_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
-    'mixvit_s_384.in1k': _cfg(
+    'wsfvit_s_384.in1k': _cfg(
         file='/path/to/checkpoint', 
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=0.95, crop_mode='squash'
     ),
 
-    'mixvit_m_224.in1k': _cfg(
+    'wsfvit_m_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
-    'mixvit_m_384.in1k': _cfg(
+    'wsfvit_m_384.in1k': _cfg(
         file='/path/to/checkpoint', 
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=0.95, crop_mode='squash'
     ),
 
-    'mixvit_b_224.in1k': _cfg(
+    'wsfvit_b_224.in1k': _cfg(
         file='/path/to/checkpoint', 
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
-    'mixvit_b_256.in1k': _cfg(
+    'wsfvit_b_256.in1k': _cfg(
         file='/path/to/checkpoint', 
         input_size=(3, 256, 256), pool_size=(8, 8),
         mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
-    'mixvit_b_384.in1k': _cfg(
+    'wsfvit_b_384.in1k': _cfg(
         file='/path/to/checkpoint', 
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=0.95, crop_mode='squash'
     ),
 })
 
 model_cfgs = dict(
-        mixvit_p1_224=MixVitCfg(
+        wsfvit_p1_224=wsfVitCfg(
             embed_dim=(32, 64, 128, 256),
             depths=(1, 1, 2, 1),
             num_heads=(4, 8, 16, 32),
@@ -1156,7 +1156,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=256,
         ),
-        mixvit_p2_224=MixVitCfg(
+        wsfvit_p2_224=wsfVitCfg(
             embed_dim=(32, 64, 128, 256),
             depths=(1, 2, 3, 1),
             num_heads=(4, 8, 16, 32),
@@ -1166,7 +1166,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=256,
         ),
-        mixvit_n_224=MixVitCfg(
+        wsfvit_n_224=wsfVitCfg(
             embed_dim=(32, 64, 128, 256),
             depths=(2, 2, 5, 2),
             num_heads=(4, 8, 16, 32),
@@ -1176,7 +1176,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=256,
         ),
-        mixvit_t_224=MixVitCfg(
+        wsfvit_t_224=wsfVitCfg(
             embed_dim=(64, 128, 256, 512),
             depths=(1, 2, 3, 1),
             num_heads=(4, 8, 16, 32),
@@ -1186,7 +1186,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=512,
         ),
-        mixvit_t_384=MixVitCfg(
+        wsfvit_t_384=wsfVitCfg(
             embed_dim=(64, 128, 256, 512),
             depths=(1, 2, 3, 1),
             num_heads=(4, 8, 16, 32),
@@ -1195,12 +1195,12 @@ model_cfgs = dict(
             stem_width=32,
             stem_bias=True,
             head_hidden_size=512,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 window_size=(12, 12),
                 grid_size=(12, 12),
             )
         ),
-        mixvit_s_224=MixVitCfg(
+        wsfvit_s_224=wsfVitCfg(
             embed_dim=(64, 128, 256, 512),
             num_heads=(4, 8, 16, 32),
             depths=(2, 2, 5, 2),
@@ -1210,7 +1210,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=512,
         ),
-        mixvit_s_384=MixVitCfg(
+        wsfvit_s_384=wsfVitCfg(
             embed_dim=(64, 128, 256, 512),
             num_heads=(4, 8, 16, 32),
             depths=(2, 2, 5, 2),
@@ -1219,12 +1219,12 @@ model_cfgs = dict(
             stem_width=64,
             stem_bias=True,
             head_hidden_size=512,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 window_size=(12, 12),
                 grid_size=(12, 12),
             )
         ),
-        mixvit_m_224=MixVitCfg(
+        wsfvit_m_224=wsfVitCfg(
             embed_dim=(80, 160, 320, 640),
             num_heads=(4, 8, 16, 32),
             depths=(2, 2, 6, 2),
@@ -1233,11 +1233,11 @@ model_cfgs = dict(
             stem_width=80,
             stem_bias=True,
             head_hidden_size=640,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 dim_head = 40
             ),
         ),
-        mixvit_m_384=MixVitCfg(
+        wsfvit_m_384=wsfVitCfg(
             embed_dim=(80, 160, 320, 640),
             num_heads=(4, 8, 16, 32),
             depths=(2, 2, 6, 2),
@@ -1246,13 +1246,13 @@ model_cfgs = dict(
             stem_width=80,
             stem_bias=True,
             head_hidden_size=640,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 dim_head = 40,
                 window_size=(12, 12),
                 grid_size=(12, 12),
             ),
         ),
-        mixvit_b_224=MixVitCfg(
+        wsfvit_b_224=wsfVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
             num_heads=(4, 8, 16, 32),
@@ -1261,11 +1261,11 @@ model_cfgs = dict(
             stem_width=64,
             stem_bias=True,
             head_hidden_size=768,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 dim_head = 32,
             ),
         ),
-        mixvit_b_256=MixVitCfg(
+        wsfvit_b_256=wsfVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
             num_heads=(4, 8, 16, 32),
@@ -1274,13 +1274,13 @@ model_cfgs = dict(
             stem_width=64,
             stem_bias=True,
             head_hidden_size=768,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 dim_head = 32,
                 window_size=(8, 8),
                 grid_size=(8, 8),
             ),
         ),
-        mixvit_b_384=MixVitCfg(
+        wsfvit_b_384=wsfVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
             num_heads=(4, 8, 16, 32),
@@ -1289,7 +1289,7 @@ model_cfgs = dict(
             stem_width=64,
             stem_bias=True,
             head_hidden_size=768,
-            transformer_cfg=MixVitTransformerCfg(
+            transformer_cfg=wsfVitTransformerCfg(
                 dim_head = 32,
                 window_size=(12, 12),
                 grid_size=(12, 12),
@@ -1300,57 +1300,57 @@ model_cfgs = dict(
 
 if classification:
     @register_model
-    def mixvit_p1_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_p1_224', 'mixvit_p1_224', pretrained=pretrained, **kwargs)
+    def wsfvit_p1_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_p1_224', 'wsfvit_p1_224', pretrained=pretrained, **kwargs)
     
     @register_model
-    def mixvit_p2_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_p2_224', 'mixvit_p2_224', pretrained=pretrained, **kwargs)
+    def wsfvit_p2_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_p2_224', 'wsfvit_p2_224', pretrained=pretrained, **kwargs)
     
     @register_model
-    def mixvit_n_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_n_224', 'mixvit_n_224', pretrained=pretrained, **kwargs)
+    def wsfvit_n_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_n_224', 'wsfvit_n_224', pretrained=pretrained, **kwargs)
     
     @register_model
-    def mixvit_t_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_t_224', 'mixvit_t_224', pretrained=pretrained, **kwargs)
+    def wsfvit_t_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_t_224', 'wsfvit_t_224', pretrained=pretrained, **kwargs)
     @register_model
-    def mixvit_t_384(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_t_384', 'mixvit_t_384', pretrained=pretrained, **kwargs)
+    def wsfvit_t_384(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_t_384', 'wsfvit_t_384', pretrained=pretrained, **kwargs)
 
     @register_model
-    def mixvit_s_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_s_224', 'mixvit_s_224', pretrained=pretrained, **kwargs)
+    def wsfvit_s_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_s_224', 'wsfvit_s_224', pretrained=pretrained, **kwargs)
     @register_model
-    def mixvit_s_384(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_s_384', 'mixvit_s_384', pretrained=pretrained, **kwargs)
+    def wsfvit_s_384(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_s_384', 'wsfvit_s_384', pretrained=pretrained, **kwargs)
 
     @register_model
-    def mixvit_m_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_m_224', 'mixvit_m_224', pretrained=pretrained, **kwargs)
+    def wsfvit_m_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_m_224', 'wsfvit_m_224', pretrained=pretrained, **kwargs)
     @register_model
-    def mixvit_m_384(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_m_384', 'mixvit_m_384', pretrained=pretrained, **kwargs)
+    def wsfvit_m_384(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_m_384', 'wsfvit_m_384', pretrained=pretrained, **kwargs)
 
     @register_model
-    def mixvit_b_224(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_b_224', 'mixvit_b_224', pretrained=pretrained, **kwargs)
+    def wsfvit_b_224(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_b_224', 'wsfvit_b_224', pretrained=pretrained, **kwargs)
     @register_model
-    def mixvit_b_256(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_b_256', 'mixvit_b_256', pretrained=pretrained, **kwargs)
+    def wsfvit_b_256(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_b_256', 'wsfvit_b_256', pretrained=pretrained, **kwargs)
     @register_model
-    def mixvit_b_384(pretrained=False, **kwargs) -> MixVit:
-        return _create_mixvit('mixvit_b_384', 'mixvit_b_384', pretrained=pretrained, **kwargs)
+    def wsfvit_b_384(pretrained=False, **kwargs) -> wsfVit:
+        return _create_wsfvit('wsfvit_b_384', 'wsfvit_b_384', pretrained=pretrained, **kwargs)
     
 else:
     if mmpose:
         @MODELS.register_module()
-        class MixVit_feat(MixVit):
+        class wsfVit_feat(wsfVit):
             def __init__(self, **kwargs):
                 super().__init__(fork_feat=True, **kwargs)
     elif mmdet:
         @det_BACKBONES.register_module()
-        class MixVit_feat(MixVit):
+        class wsfVit_feat(wsfVit):
             def __init__(self, **kwargs):
                 super().__init__(fork_feat=True, **kwargs)
     else:
