@@ -1,5 +1,5 @@
 timm == 1.0.15 
-fvcore
+fvcore 
 pywavelets
 numpy
 torch
