@@ -8,7 +8,7 @@ pretrained = '/path/to/pretrained/checkpoint'
 
 model = dict(
     backbone=dict(
-        type='MixVit_feat',
+        type='WSFVit_feat',
         model_name='wsfvit_s_224',
         pretrained_path=pretrained,
         drop_rte=0.,
