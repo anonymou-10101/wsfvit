@@ -17,7 +17,7 @@ from timm.models._manipulate import named_apply, checkpoint_seq
 
 
 @dataclass
-class MaxxVitTransformerCfg:
+class WSFVitTransformerCfg:
     dim_head: int = 40
     #dim_head: int = 32
     head_first: bool = True  # head ordering in qkv channel dim
@@ -34,7 +34,7 @@ class MaxxVitTransformerCfg:
     window_size: Optional[Tuple[int, int]] = (7, 7)
     grid_size: Optional[Tuple[int, int]] = (7, 7)
     no_block_attn: bool = False  # disable window block attention for maxvit (ie only grid)
-    use_nchw_attn: bool = False  # for MaxViT variants (not used for CoAt), keep tensors in NCHW order
+    use_nchw_attn: bool = False  # for WSFViT variants (not used for CoAt), keep tensors in NCHW order
     init_values: Optional[float] = None
     act_layer: str = 'gelu'
     norm_layer: str = 'layernorm2d'
@@ -51,7 +51,7 @@ class MaxxVitTransformerCfg:
 
 
 @dataclass
-class MaxxVitConvCfg:
+class WSFVitConvCfg:
     block_type: str = 'mbconv'
     expand_ratio: float = 4.0
     expand_output: bool = True  # calculate expansion channels from output (vs input chs)
@@ -87,7 +87,7 @@ class MaxxVitConvCfg:
 
 
 @dataclass
-class MaxxVitCfg:
+class WSFVitCfg:
     embed_dim: Tuple[int, ...] = (96, 192, 384, 768)
     num_heads: Tuple[int, ...] = (4, 8, 16, 32)
     depths: Tuple[int, ...] = (2, 3, 5, 2)
@@ -95,8 +95,8 @@ class MaxxVitCfg:
     block_type: Tuple[Union[str, Tuple[str, ...]], ...] = ('C', 'C', 'T', 'T')
     stem_width: Union[int, Tuple[int, int]] = 64
     stem_bias: bool = False
-    conv_cfg: MaxxVitConvCfg = field(default_factory=MaxxVitConvCfg)
-    transformer_cfg: MaxxVitTransformerCfg = field(default_factory=MaxxVitTransformerCfg)
+    conv_cfg: WSFVitConvCfg = field(default_factory=WSFVitConvCfg)
+    transformer_cfg: WSFVitTransformerCfg = field(default_factory=WSFVitTransformerCfg)
     head_hidden_size: int = None
     weight_init: str = 'vit_eff'
 
@@ -110,7 +110,7 @@ class MbConvBlock(nn.Module):
             out_chs: int,
             stride: int = 1,
             dilation: Tuple[int, int] = (1, 1),
-            cfg: MaxxVitConvCfg = MaxxVitConvCfg(),
+            cfg: WSFVitConvCfg = WSFVitConvCfg(),
             drop_path: float = 0.
     ):
         super(MbConvBlock, self).__init__()
@@ -295,7 +295,7 @@ class PartitionAttentionCl(nn.Module):
             self,
             dim: int,
             partition_type: str = 'block',
-            cfg: MaxxVitTransformerCfg = MaxxVitTransformerCfg(),
+            cfg: WSFVitTransformerCfg = WSFVitTransformerCfg(),
             drop_path: float = 0.,
     ):
         super().__init__()
@@ -386,7 +386,7 @@ def grid_reverse(windows, grid_size: List[int], img_size: List[int]):
     return x
 
 
-def get_rel_pos_cls(cfg: MaxxVitTransformerCfg, window_size):
+def get_rel_pos_cls(cfg: WSFVitTransformerCfg, window_size):
     rel_pos_cls = None
     if cfg.rel_pos_type == 'mlp':
         rel_pos_cls = partial(RelPosMlp, window_size=window_size, hidden_dim=cfg.rel_pos_dim)
