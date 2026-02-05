@@ -13,7 +13,7 @@ from .simvp_modules import (BasicConv2d, ConvSC, GroupConv2d,
                             ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                             HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
                             SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock,
-                            MixvitSubBlock)
+                            WSFvitSubBlock)
 
 __all__ = [
     'ConvLSTMCell', 'CausalLSTMCell', 'GHU', 'SpatioTemporalLSTMCell', 'SpatioTemporalLSTMCellv2',
@@ -23,5 +23,5 @@ __all__ = [
     'ConvNeXtSubBlock', 'ConvMixerSubBlock', 'GASubBlock', 'gInception_ST',
     'HorNetSubBlock', 'MLPMixerSubBlock', 'MogaSubBlock', 'PoolFormerSubBlock',
     'SwinSubBlock', 'UniformerSubBlock', 'VANSubBlock', 'ViTSubBlock',
-    'MixvitSubBlock'
+    'WSFvitSubBlock'
 ]
