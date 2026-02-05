@@ -1,7 +1,7 @@
 model = dict(
     type='CascadeRCNN',
     backbone=dict(
-        type='MixVit_feat',
+        type='WSFVit_feat',
         ),
     neck=dict(
         type='FPN',
