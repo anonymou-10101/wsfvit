@@ -1,5 +1,5 @@
 _base_ = [
-    '../_base_/models/cascade_mask_rcnn_mixvit_fpn_giou_4conv1f.py',
+    '../_base_/models/cascade_mask_rcnn_wsfvit_fpn_giou_4conv1f.py',
     '../_base_/datasets/coco_instance.py',
     '../_base_/schedules/schedule_3x.py', '../_base_/default_runtime.py'
 ]
@@ -8,8 +8,8 @@ pretrained = '/path/to/pretrained/checkpoint'
 
 model = dict(
     backbone=dict(
-        type='MixVit_feat',
-        model_name='mixvit_m_224',
+        type='WSFVit_feat',
+        model_name='wsfvit_m_224',
         pretrained_path=pretrained,
         drop_rte=0.,
         drop_path_rate=0.6),
