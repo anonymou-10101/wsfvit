@@ -6,6 +6,7 @@ _base_ = [
 
 pretrained = '/path/to/pretrained/checkpoint'  
 
+
 model = dict(
     backbone=dict(
         type='WSFVit_feat',
