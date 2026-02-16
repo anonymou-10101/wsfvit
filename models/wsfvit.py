@@ -188,6 +188,7 @@ class AttentionCl(nn.Module):
         super().__init__()
         dim_out = dim_out or dim
         dim_attn = dim_out if expand_first and dim_out > dim else dim
+        print(f'dim_attn: {dim_attn}, dim_head: {dim_head}')
         assert dim_attn % dim_head == 0, 'attn dim should be divisible by head_dim'
         self.num_heads = dim_attn // dim_head
         self.dim_head = dim_head
@@ -1156,22 +1157,7 @@ model_cfgs = dict(
             stem_bias=True,
             head_hidden_size=192,
             transformer_cfg=WSFVitTransformerCfg(
-                dim_head = 12
-            )
-        ),
-        wsfvit_p0_256=WSFVitCfg(
-            embed_dim=(24, 48, 96, 192),
-            depths=(1, 1, 2, 1),
-            num_heads=(2, 4, 8, 16),
-            mlp_ratio=4.,
-            block_type=('M',) * 4,
-            stem_width=24,
-            stem_bias=True,
-            head_hidden_size=192,
-            transformer_cfg=WSFVitTransformerCfg(
-                window_size=(8, 8),
-                grid_size=(8, 8),
-                dim_head = 12
+                dim_head = 12,
             )
         ),
         wsfvit_p1_224=WSFVitCfg(
@@ -1183,20 +1169,6 @@ model_cfgs = dict(
             stem_width=32,
             stem_bias=True,
             head_hidden_size=256,
-        ),
-        wsfvit_p1_256=WSFVitCfg(
-            embed_dim=(32, 64, 128, 256),
-            depths=(1, 1, 2, 1),
-            num_heads=(2, 4, 8, 16),
-            mlp_ratio=4.,
-            block_type=('M',) * 4,
-            stem_width=32,
-            stem_bias=True,
-            head_hidden_size=256,
-            transformer_cfg=WSFVitTransformerCfg(
-                window_size=(8, 8),
-                grid_size=(8, 8),
-            )
         ),
         wsfvit_p2_224=WSFVitCfg(
             embed_dim=(32, 64, 128, 256),
@@ -1211,7 +1183,7 @@ model_cfgs = dict(
         wsfvit_n_224=WSFVitCfg(
             embed_dim=(32, 64, 128, 256),
             depths=(2, 2, 5, 2),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             mlp_ratio=4.,
             block_type=('M',) * 4,
             stem_width=32,
@@ -1231,7 +1203,7 @@ model_cfgs = dict(
         wsfvit_t_384=WSFVitCfg(
             embed_dim=(64, 128, 256, 512),
             depths=(1, 2, 3, 1),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             mlp_ratio=4.,
             block_type=('M',) * 4,
             stem_width=32,
@@ -1244,7 +1216,7 @@ model_cfgs = dict(
         ),
         wsfvit_s_224=WSFVitCfg(
             embed_dim=(64, 128, 256, 512),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             depths=(2, 2, 5, 2),
             mlp_ratio=4.,
             block_type=('M',) * 4,
@@ -1254,7 +1226,7 @@ model_cfgs = dict(
         ),
         wsfvit_s_384=WSFVitCfg(
             embed_dim=(64, 128, 256, 512),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             depths=(2, 2, 5, 2),
             mlp_ratio=4.,
             block_type=('M',) * 4,
@@ -1268,7 +1240,7 @@ model_cfgs = dict(
         ),
         wsfvit_m_224=WSFVitCfg(
             embed_dim=(80, 160, 320, 640),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             depths=(2, 2, 6, 2),
             mlp_ratio=4.,
             block_type=('M',) * 4,
@@ -1281,7 +1253,7 @@ model_cfgs = dict(
         ),
         wsfvit_m_384=WSFVitCfg(
             embed_dim=(80, 160, 320, 640),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             depths=(2, 2, 6, 2),
             mlp_ratio=4.,
             block_type=('M',) * 4,
@@ -1297,7 +1269,7 @@ model_cfgs = dict(
         wsfvit_b_224=WSFVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             mlp_ratio=4.,
             block_type=('M',) * 4,
             stem_width=64,
@@ -1310,7 +1282,7 @@ model_cfgs = dict(
         wsfvit_b_256=WSFVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             mlp_ratio=4.,
             block_type=('M',) * 4,
             stem_width=64,
@@ -1325,7 +1297,7 @@ model_cfgs = dict(
         wsfvit_b_384=WSFVitCfg(
             embed_dim=(96, 192, 384, 768),
             depths=(2, 2, 6, 2),
-            num_heads=(2, 4, 8, 16),
+            num_heads=(4, 8, 16, 32),
             mlp_ratio=4.,
             block_type=('M',) * 4,
             stem_width=64,
@@ -1349,7 +1321,6 @@ if classification:
     @register_model
     def wsfvit_p0_256(pretrained=False, **kwargs) -> WSFVit:
         return _create_wsfvit('wsfvit_p0_256', 'wsfvit_p0_256', pretrained=pretrained, **kwargs)
-
     @register_model
     def wsfvit_p1_224(pretrained=False, **kwargs) -> WSFVit:
         return _create_wsfvit('wsfvit_p1_224', 'wsfvit_p1_224', pretrained=pretrained, **kwargs)
