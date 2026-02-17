@@ -89,7 +89,7 @@ bash ./tools/dist_test.sh ./configs/wsfvit/mask_rcnn_wsfvit_t_3x_coco.py /path/t
 ```
 
 ## Acknowledgment
-Our implemnation is mainly based on the following codebases. We gratefully thank the authors for their wonderfult works.
+Our implemnation is mainly based on the following codebases. We gratefully thank the authors for their wonderful works.
 - [MMDetection](https://github.com/open-mmlab/mmdetection/tree/2.x)
 - [MogaNet](https://github.com/Westlake-AI/MogaNet)
 - [SwinTransformer](https://github.com/microsoft/Swin-Transformer)
